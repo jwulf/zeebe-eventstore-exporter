@@ -22,6 +22,7 @@ public class EventStoreExporter implements Exporter
     private static final String ENV_PREFIX = "EVENT_STORE_EXPORTER_";
     private static final String ENV_URL = ENV_PREFIX + "URL";
     private static final String ENV_STREAM_NAME = ENV_PREFIX + "STREAM_NAME";
+    private static final String MIME_TYPE = "application/vnd.eventstore.events+json";
 
     private Logger log;
     private Controller controller;
@@ -45,6 +46,10 @@ public class EventStoreExporter implements Exporter
         url = configuration.url + "/streams/" + configuration.streamName;
 
         log.debug("Exporter configured with {}", configuration);
+
+        // @TODO
+        // Depends on https://github.com/zeebe-io/zeebe/issues/2546
+        // sendBatchToEventStore(new JSONArray());
     }
 
     public void open(Controller controller) {
@@ -64,7 +69,7 @@ public class EventStoreExporter implements Exporter
         final HttpPost httpPost = new HttpPost(url);
         final StringEntity json = new StringEntity(jsonArray.toString());
         httpPost.setEntity(json);
-        httpPost.setHeader("Content-Type", "application/vnd.eventstore.events+json");
+        httpPost.setHeader("Content-Type", MIME_TYPE);
         client.execute(httpPost);
         client.close();
     }
@@ -105,11 +110,11 @@ public class EventStoreExporter implements Exporter
     }
 
     public void export(Record record) {
-        final JSONObject jo = new JSONObject();
-        jo.put("eventId", UUID.randomUUID());
-        jo.put("data", new JSONObject(record.toJson()));
-        jo.put("eventType", "ZeebeEvent");
-        queue.add(new ImmutablePair<>(record.getPosition(), jo));
+        final JSONObject json = new JSONObject();
+        json.put("eventId", UUID.randomUUID());
+        json.put("data", new JSONObject(record.toJson()));
+        json.put("eventType", "ZeebeEvent");
+        queue.add(new ImmutablePair<>(record.getPosition(), json));
     }
 
     private void applyEnvironmentVariables(final EventStoreExporterConfiguration configuration) {
