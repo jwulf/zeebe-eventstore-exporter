@@ -4,7 +4,6 @@ import io.zeebe.exporter.api.context.Context;
 import io.zeebe.exporter.api.context.Controller;
 import io.zeebe.exporter.api.record.Record;
 import io.zeebe.exporter.api.spi.Exporter;
-import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -18,28 +17,24 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.*;
 
-
 public class EventStoreExporter implements Exporter
 {
-
     private static final String ENV_PREFIX = "EVENT_STORE_EXPORTER_";
     private static final String ENV_URL = ENV_PREFIX + "URL";
     private static final String ENV_STREAM_NAME = ENV_PREFIX + "STREAM_NAME";
 
     private Logger log;
-    private EventStoreExporterConfiguration configuration;
     private Controller controller;
 
     private int batchSize;
-    private int batchTimerMilli;
     private Duration batchExecutionTimer;
     private String url;
-    private String streamName;
-    private LinkedList<ImmutablePair<Long, String>> batch = new LinkedList<>();
+    private int batchTimerMilli;
+    private LinkedList<ImmutablePair<Long, JSONObject>> queue = new LinkedList<>();
 
     public void configure(final Context context) {
         log = context.getLogger();
-        configuration = context
+        EventStoreExporterConfiguration configuration = context
                 .getConfiguration()
                 .instantiate(EventStoreExporterConfiguration.class);
 
@@ -47,8 +42,7 @@ public class EventStoreExporter implements Exporter
 
         batchSize = configuration.batchSize;
         batchTimerMilli = configuration.batchTimeMilli;
-        url = configuration.url;
-        streamName = configuration.streamName;
+        url = configuration.url + "/streams/" + configuration.streamName;
 
         log.debug("Exporter configured with {}", configuration);
     }
@@ -57,75 +51,65 @@ public class EventStoreExporter implements Exporter
         this.controller = controller;
         if (batchTimerMilli > 0) {
             batchExecutionTimer = Duration.ofMillis(batchTimerMilli);
-            this.controller.scheduleTask(batchExecutionTimer, this::batchExportExecution);
+            scheduleNextBatch();
         }
     }
 
-    private void sendRecord(JSONArray jsonString) throws IOException {
-        try {
-            final String url = this.url + "/streams/" + this.streamName;
-            final CloseableHttpClient client = HttpClients.createDefault();
-            HttpPost httpPost = new HttpPost(url);
-            StringEntity json = new StringEntity(jsonString.toString());
-            httpPost.setEntity(json);
-            httpPost.setHeader("Content-Type", "application/vnd.eventstore.events+json");
-            CloseableHttpResponse response = client.execute(httpPost);
-            client.close();
-        } catch (IOException e) {
-            throw new IOException(e.getMessage());
-        }
+    private void scheduleNextBatch() {
+        controller.scheduleTask(batchExecutionTimer, this::batchRecordsFromQueue);
     }
 
-    private void batchExportExecution() {
-        // Return if there are no queued events to send
-        if (batch.isEmpty()) {
-            controller.scheduleTask(batchExecutionTimer, this::batchExportExecution);
+    private void sendBatchToEventStore(JSONArray jsonArray) throws IOException {
+        final CloseableHttpClient client = HttpClients.createDefault();
+        final HttpPost httpPost = new HttpPost(url);
+        final StringEntity json = new StringEntity(jsonArray.toString());
+        httpPost.setEntity(json);
+        httpPost.setHeader("Content-Type", "application/vnd.eventstore.events+json");
+        client.execute(httpPost);
+        client.close();
+    }
+
+    private void batchRecordsFromQueue() {
+        if (queue.isEmpty()) {
+            scheduleNextBatch();
             return;
         }
-        // In this iteration, send all the queued events up to the batchSize
-        int countRecordsToSend = Math.max(batchSize, batch.size());
 
-        // Grab the queued events to send
-        ArrayList<String> recordsToSend = new ArrayList<>();
         long lastRecordSentPosition = -1;
-        for (int i = 0; i < countRecordsToSend; i++) {
-            ImmutablePair<Long, String> current = batch.pollFirst();
+        final int countRecordsToSend = Math.max(batchSize, queue.size());
+
+        final JSONArray jsonArray = new JSONArray();
+
+        for (int i = 0; i < countRecordsToSend; i ++) {
+            final ImmutablePair<Long, JSONObject> current = queue.pollFirst();
             if (current != null) {
-                recordsToSend.add(current.getValue());
+                jsonArray.put(current.getValue());
                 lastRecordSentPosition = current.getKey();
             }
         }
-
-        JSONArray jsonArray = new JSONArray();
-        for (String s : recordsToSend) {
-            jsonArray.put(new JSONObject(s));
-        }
-
-        // Send the JSON Array to Event Store
+        
         try {
-            this.sendRecord(jsonArray);
+            sendBatchToEventStore(jsonArray);
+            if (lastRecordSentPosition != -1) {
+                controller.updateLastExportedRecordPosition(lastRecordSentPosition);
+            }
         } catch (IOException e) {
-            // YOLO - lossy
             log.debug(e.getMessage());
+        } finally {
+            scheduleNextBatch();
         }
-
-        if (lastRecordSentPosition != -1) {
-            controller.updateLastExportedRecordPosition(lastRecordSentPosition);
-        }
-        controller.scheduleTask(batchExecutionTimer, this::batchExportExecution);
     }
 
     public void close() {
-
+        log.debug("Closing Event Store Exporter");
     }
 
     public void export(Record record) {
-        String jsonRecord = record.toJson();
-        JSONObject jo = new JSONObject();
+        final JSONObject jo = new JSONObject();
         jo.put("eventId", UUID.randomUUID());
-        jo.put("data", new JSONObject(jsonRecord));
+        jo.put("data", new JSONObject(record.toJson()));
         jo.put("eventType", "ZeebeEvent");
-        batch.add(new ImmutablePair<>(record.getPosition(), jo.toString()));
+        queue.add(new ImmutablePair<>(record.getPosition(), jo));
     }
 
     private void applyEnvironmentVariables(final EventStoreExporterConfiguration configuration) {
