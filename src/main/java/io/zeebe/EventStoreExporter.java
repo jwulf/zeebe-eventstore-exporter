@@ -82,7 +82,7 @@ public class EventStoreExporter implements Exporter
             return;
         }
 
-        long lastRecordSentPosition = -1;
+        OptionalLong lastRecordSentPosition = OptionalLong.empty();
         final int countRecordsToSend = Math.max(batchSize, queue.size());
 
         final JSONArray jsonArray = new JSONArray();
@@ -91,15 +91,13 @@ public class EventStoreExporter implements Exporter
             final ImmutablePair<Long, JSONObject> current = queue.pollFirst();
             if (current != null) {
                 jsonArray.put(current.getValue());
-                lastRecordSentPosition = current.getKey();
+                lastRecordSentPosition = OptionalLong.of(current.getKey());
             }
         }
         
         try {
             sendBatchToEventStore(jsonArray);
-            if (lastRecordSentPosition != -1) {
-                controller.updateLastExportedRecordPosition(lastRecordSentPosition);
-            }
+            lastRecordSentPosition.ifPresent(p -> controller.updateLastExportedRecordPosition(p));
         } catch (IOException e) {
             log.debug(e.getMessage());
         } finally {
