@@ -47,9 +47,11 @@ public class EventStoreExporter implements Exporter
 
         log.debug("Exporter configured with {}", configuration);
 
-        // @TODO
-        // Depends on https://github.com/zeebe-io/zeebe/issues/2546
-        // sendBatchToEventStore(new JSONArray());
+        try {
+            sendBatchToEventStore(new JSONArray());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public void open(Controller controller) {
