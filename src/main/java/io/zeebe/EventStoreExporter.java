@@ -112,7 +112,7 @@ public class EventStoreExporter implements Exporter
             return;
         }
         final int eventQueueSize = eventsToBatch.size();
-        if (eventQueueSize > 200) {
+        if (eventQueueSize > batchSize * 2) {
             batchingBackPressureIterationCounter++;
         } else {
             batchingBackPressureIterationCounter = 0;
@@ -126,15 +126,14 @@ public class EventStoreExporter implements Exporter
         }
 
         Long lastRecordInBatchPosition = -1L;
-        final int countRecordsToSend = Math.max(batchSize, eventsToBatch.size());
-
+        final int countEventsToBatchNow = Math.max(batchSize, eventsToBatch.size());
         final JSONArray jsonArray = new JSONArray();
 
-        for (int i = 0; i < countRecordsToSend; i ++) {
-            final ImmutablePair<Long, JSONObject> current = eventsToBatch.pollFirst();
-            if (current != null) {
-                jsonArray.put(current.getValue());
-                lastRecordInBatchPosition = current.getKey();
+        for (int i = 0; i < countEventsToBatchNow; i ++) {
+            final ImmutablePair<Long, JSONObject> event = eventsToBatch.pollFirst();
+            if (event != null) {
+                jsonArray.put(event.getValue());
+                lastRecordInBatchPosition = event.getKey();
             }
         }
         batchesToSend.add(new ImmutablePair<>(lastRecordInBatchPosition, jsonArray));
@@ -148,7 +147,7 @@ public class EventStoreExporter implements Exporter
         }
         final int batchQueueSize = batchesToSend.size();
 
-        if (batchQueueSize > 5) {
+        if (batchQueueSize > 3) {
             sendingBackPressureIterationCounter++;
         } else {
             sendingBackPressureIterationCounter = 0;
