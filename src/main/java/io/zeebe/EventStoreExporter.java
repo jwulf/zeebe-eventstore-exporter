@@ -17,7 +17,6 @@ public class EventStoreExporter implements Exporter
     private static final String ENV_STREAM_NAME = ENV_PREFIX + "STREAM_NAME";
     private static final String ENV_BATCH_SIZE = ENV_PREFIX + "BATCH_SIZE";
     private static final String ENV_BATCH_TIME_MILLI = ENV_PREFIX + "BATCH_TIME_MILLI";
-    private static final String ENV_BACK_PRESSURE_WARNING_SECONDS =  ENV_PREFIX + "BACK_PRESSURE_WARNING_SECONDS";
 
     private Logger log;
     private EventStoreExporterConfiguration configuration;
@@ -46,7 +45,7 @@ public class EventStoreExporter implements Exporter
 
     public void open(final Controller controller) {
         EventStoreExporterContext context = new EventStoreExporterContext(controller, configuration, log);
-        eventQueue = new EventQueue(context);
+        eventQueue = new EventQueue();
         batcher = new Batcher(context);
         this.controller =  controller;
         controller.scheduleTask(Duration.ofMillis(batcher.batchPeriod), this::batchEvents);
@@ -63,13 +62,11 @@ public class EventStoreExporter implements Exporter
     }
 
     private void batchEvents() {
-        eventQueue.warnIfBackPressure();
         batcher.batchFrom(eventQueue.getEvents());
         controller.scheduleTask(Duration.ofMillis(batcher.batchPeriod), this::batchEvents);
     }
 
     private void sendBatch() {
-        batcher.warnIfBackPressure();
         batcher.sendBatch();
         controller.scheduleTask(Duration.ofMillis(batcher.sendPeriod), this::sendBatch);
     }
@@ -85,7 +82,5 @@ public class EventStoreExporter implements Exporter
                 .ifPresent(batchSize -> configuration.batchSize = Integer.parseInt(batchSize));
         Optional.ofNullable(environment.get(ENV_BATCH_TIME_MILLI))
                 .ifPresent(batchTimeMilli -> configuration.batchTimeMilli = Integer.parseInt(batchTimeMilli));
-        Optional.ofNullable(environment.get(ENV_BACK_PRESSURE_WARNING_SECONDS))
-                .ifPresent(backPressureWarningSeconds -> configuration.backPressureWarningSeconds = Integer.parseInt(backPressureWarningSeconds));
     }
 }

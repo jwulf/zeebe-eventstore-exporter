@@ -1,5 +1,6 @@
 package io.zeebe;
 
+@SuppressWarnings("WeakerAccess")
 public class EventStoreExporterConfiguration {
     String url = "http://localhost:2113";
 
@@ -18,6 +19,4 @@ public class EventStoreExporterConfiguration {
      * <p>If the value is less then one, then no timer will be scheduled.
      */
     int batchTimeMilli = 300;
-
-    int backPressureWarningSeconds = 30;
 }

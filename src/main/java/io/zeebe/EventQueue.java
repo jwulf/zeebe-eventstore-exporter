@@ -3,25 +3,12 @@ package io.zeebe;
 import io.zeebe.exporter.api.record.Record;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.json.JSONObject;
-import org.slf4j.Logger;
 import java.util.LinkedList;
 
 class EventQueue {
-    private LinkedList<ImmutablePair<Long, JSONObject>> queue = new LinkedList<>();
-    private Logger log;
-    private int batchSize;
-    private int batchingBackPressureIterationCounter;
-    private int backPressureWarningPeriodIterations;
-    private int backPressureWarningSeconds;
+    private final LinkedList<ImmutablePair<Long, JSONObject>> queue = new LinkedList<>();
 
-    EventQueue(EventStoreExporterContext context) {
-        log = context.log;
-        EventStoreExporterConfiguration configuration = context.configuration;
-        batchSize = configuration.batchSize;
-        final int batchTimeMilli = configuration.batchTimeMilli;
-        batchingBackPressureIterationCounter = 0;
-        backPressureWarningSeconds = configuration.backPressureWarningSeconds;
-        backPressureWarningPeriodIterations = backPressureWarningSeconds * 1000 / batchTimeMilli;
+    EventQueue() {
     }
 
     LinkedList<ImmutablePair<Long, JSONObject>> getEvents() {
@@ -57,21 +44,5 @@ class EventQueue {
         sb.insert(18, "-");
         sb.insert(23, "-");
         return sb.toString();
-    }
-
-    void warnIfBackPressure() {
-        final int eventQueueSize = queue.size();
-        if (eventQueueSize > batchSize * 2) {
-            batchingBackPressureIterationCounter++;
-        } else {
-            batchingBackPressureIterationCounter = 0;
-        }
-        final boolean batchingBackPressure = batchingBackPressureIterationCounter > backPressureWarningPeriodIterations;
-        if (batchingBackPressure) {
-            log.debug("The Event Store exporter has been experiencing back pressure for " + backPressureWarningSeconds + " seconds");
-            log.debug("The event queue is currently: " + eventQueueSize);
-            log.debug("If this continues to grow, decrease batchTimerMilli or increase batchSize.");
-            batchingBackPressureIterationCounter = 0;
-        }
     }
 }

@@ -10,18 +10,15 @@ import java.util.LinkedList;
 import org.slf4j.Logger;
 
 class Batcher {
-    private LinkedList<ImmutablePair<Long, JSONArray>> queue = new LinkedList<>();
-    private int batchSize;
-    private HttpSender sender;
-    private Logger log;
-    private int sendingBackPressureIterationCounter = 0;
-    private int backPressureWarningPeriodIterations;
-    private int backPressureWarningSeconds;
-    private Controller controller;
-    private int sendTimeMilli;
+    private final int[] FIBONACCI = new int[]{ 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144};
+    private final LinkedList<ImmutablePair<Long, JSONArray>> queue = new LinkedList<>();
+    private final int batchSize;
+    private final HttpSender sender;
+    private final Logger log;
+    private final Controller controller;
+    private final int sendTimeMilli;
     int sendPeriod;
-    int batchPeriod;
-
+    final int batchPeriod;
 
     Batcher(EventStoreExporterContext context) {
         EventStoreExporterConfiguration configuration = context.configuration;
@@ -32,8 +29,7 @@ class Batcher {
         sendTimeMilli = configuration.batchTimeMilli;
         sendPeriod = sendTimeMilli;
         batchPeriod = configuration.batchTimeMilli;
-        backPressureWarningSeconds = configuration.backPressureWarningSeconds;
-        backPressureWarningPeriodIterations = backPressureWarningSeconds * 1000 / sendTimeMilli;
+
     }
 
     void batchFrom(LinkedList<ImmutablePair<Long, JSONObject>> eventQueue) {
@@ -55,6 +51,9 @@ class Batcher {
     }
 
     void sendBatch() {
+        if (queue.isEmpty()) {
+            return;
+        }
         ImmutablePair<Long, JSONArray> batch = queue.getFirst();
         final JSONArray eventBatch = batch.getValue();
         final Long positionOfLastEventInBatch = batch.getKey();
@@ -63,26 +62,13 @@ class Batcher {
             queue.pollFirst();
             controller.updateLastExportedRecordPosition(positionOfLastEventInBatch);
         } catch (IOException e) {
-            sendPeriod = sender.backOffFactor * sendTimeMilli;
-            log.debug("Post to Event Store failed. Retrying in " + sendPeriod + "ms");
+            log.debug("Post to Event Store failed.");
+            log.debug(e.toString());
         } finally {
-            sendPeriod = sender.backOffFactor * sendTimeMilli;
-        }
-    }
-
-    void warnIfBackPressure() {
-        int batchQueueSize = queue.size();
-        if (batchQueueSize > 3) {
-            sendingBackPressureIterationCounter++;
-        } else {
-            sendingBackPressureIterationCounter = 0;
-        }
-        final boolean sendingBackPressure = sendingBackPressureIterationCounter > backPressureWarningPeriodIterations;
-        if (sendingBackPressure && sender.backOffFactor == 1) {
-            log.debug("The Event Store exporter has been experiencing back pressure for " + backPressureWarningSeconds + " seconds");
-            log.debug("The current sending queue has " + batchQueueSize + " batches to send");
-            log.debug("If this continues to grow, increase the batchSize or decrease the sendTimeMilli value");
-            sendingBackPressureIterationCounter = 0;
+            sendPeriod = FIBONACCI[Math.min(sender.backOffFactor, FIBONACCI.length -  1)] * sendTimeMilli;
+            if (sender.failed) {
+                log.debug("Retrying in "+ sendPeriod + "ms...");
+            }
         }
     }
 }
