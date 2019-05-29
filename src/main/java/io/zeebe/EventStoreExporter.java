@@ -22,16 +22,21 @@ public class EventStoreExporter implements Exporter
     private static final String ENV_PREFIX = "EVENT_STORE_EXPORTER_";
     private static final String ENV_URL = ENV_PREFIX + "URL";
     private static final String ENV_STREAM_NAME = ENV_PREFIX + "STREAM_NAME";
+    private static final String ENV_BATCH_SIZE = ENV_PREFIX + "BATCH_SIZE";
+    private static final String ENV_BATCH_TIME_MILLI = ENV_PREFIX + "BATCH_TIME_MILLI";
+    private static final String ENV_RETRY_TIME_MILLI = ENV_PREFIX + "RETRY_TIME_MILLI";
     private static final String MIME_TYPE = "application/vnd.eventstore.events+json";
 
     private Logger log;
     private Controller controller;
 
     private int batchSize;
-    private Duration batchExecutionTimer;
+    private int retryTimeMillis;
     private String url;
     private int batchTimerMilli;
+    private int backoffFactor;
     private LinkedList<ImmutablePair<Long, JSONObject>> queue = new LinkedList<>();
+    private LinkedList<JSONArray> retryQueue = new LinkedList<>();
 
     public void configure(final Context context) {
         log = context.getLogger();
@@ -45,8 +50,11 @@ public class EventStoreExporter implements Exporter
         batchTimerMilli = configuration.batchTimeMilli;
         url = configuration.url + "/streams/" + configuration.streamName;
 
+        retryTimeMillis = configuration.retryTimeMilli;
+        backoffFactor = 1;
         log.debug("Exporter configured with {}", configuration);
 
+        // Test the connection to Event Store, and halt the broker if unavailable
         try {
             sendBatchToEventStore(new JSONArray());
         } catch (Exception e) {
@@ -57,23 +65,50 @@ public class EventStoreExporter implements Exporter
     public void open(Controller controller) {
         this.controller = controller;
         if (batchTimerMilli > 0) {
-            batchExecutionTimer = Duration.ofMillis(batchTimerMilli);
             scheduleNextBatch();
         }
+        log.debug("Event Store exporter started.");
     }
 
     private void scheduleNextBatch() {
-        controller.scheduleTask(batchExecutionTimer, this::batchRecordsFromQueue);
+        int period = batchTimerMilli * backoffFactor;
+        controller.scheduleTask(Duration.ofMillis(period), this::batchRecordsFromQueue);
+    }
+
+    private void scheduleRetry() {
+        int period = retryTimeMillis * backoffFactor;
+        controller.scheduleTask(Duration.ofMillis(period), this::retryFailedBatch);
     }
 
     private void sendBatchToEventStore(JSONArray jsonArray) throws IOException {
-        final CloseableHttpClient client = HttpClients.createDefault();
-        final HttpPost httpPost = new HttpPost(url);
-        final StringEntity json = new StringEntity(jsonArray.toString());
-        httpPost.setEntity(json);
-        httpPost.setHeader("Content-Type", MIME_TYPE);
-        client.execute(httpPost);
-        client.close();
+        try (final CloseableHttpClient client = HttpClients.createDefault()) {
+            final HttpPost httpPost = new HttpPost(url);
+            final StringEntity json = new StringEntity(jsonArray.toString());
+            httpPost.setEntity(json);
+            httpPost.setHeader("Content-Type", MIME_TYPE);
+            client.execute(httpPost);
+        }
+    }
+
+    private void retryFailedBatch() {
+        if (retryQueue.isEmpty()) {
+            return;
+        }
+        JSONArray retryBatch = retryQueue.getFirst();
+        try {
+            sendBatchToEventStore(retryBatch);
+            retryQueue.poll();
+            backoffFactor = 1;
+        } catch (IOException e) {
+            log.debug("Post to Event Store failed: " + e.getMessage());
+            backoffFactor++;
+            log.debug("Retrying in " + backoffFactor * retryTimeMillis + "ms");
+            scheduleRetry();
+        } finally {
+            if (!retryQueue.isEmpty()) {
+                scheduleRetry();
+            }
+        }
     }
 
     private void batchRecordsFromQueue() {
@@ -98,8 +133,11 @@ public class EventStoreExporter implements Exporter
         try {
             sendBatchToEventStore(jsonArray);
             lastRecordSentPosition.ifPresent(p -> controller.updateLastExportedRecordPosition(p));
+            backoffFactor = 1;
         } catch (IOException e) {
             log.debug(e.getMessage());
+            retryQueue.add(jsonArray);
+            scheduleRetry();
         } finally {
             scheduleNextBatch();
         }
@@ -109,9 +147,28 @@ public class EventStoreExporter implements Exporter
         log.debug("Closing Event Store Exporter");
     }
 
+    /**
+     *     Events passed to the exporter are at-least-once -- the same event may be seen twice.
+     *     Event Store guarantees idempotent event creation based on the eventId - which must be a UUID.
+     *     We use a seed UUID, and replace the last part with the position and partition to get
+     *     a UUID that is idempotent for an event on the broker.
+     */
+    private String getIdempotentEventId(Record record) {
+        String seed = "393d7039721342d6b619de6bff4ffd2e";
+        String id = String.valueOf(record.getPosition()) + record.getMetadata().getPartitionId();
+        StringBuilder sb = new StringBuilder(seed);
+        sb.delete(31 - id.length(), 31);
+        sb.append(id);
+        sb.insert(8, "-");
+        sb.insert(13, "-");
+        sb.insert(18, "-");
+        sb.insert(23, "-");
+        return sb.toString();
+    }
+
     public void export(Record record) {
         final JSONObject json = new JSONObject();
-        json.put("eventId", UUID.randomUUID());
+        json.put("eventId", getIdempotentEventId(record));
         json.put("data", new JSONObject(record.toJson()));
         json.put("eventType", "ZeebeEvent");
         queue.add(new ImmutablePair<>(record.getPosition(), json));
@@ -119,10 +176,17 @@ public class EventStoreExporter implements Exporter
 
     private void applyEnvironmentVariables(final EventStoreExporterConfiguration configuration) {
         final Map<String, String> environment = System.getenv();
+        log.debug(environment.toString());
 
         Optional.ofNullable(environment.get(ENV_STREAM_NAME))
                 .ifPresent(streamName -> configuration.streamName = streamName);
         Optional.ofNullable(environment.get(ENV_URL))
                 .ifPresent(url -> configuration.url = url);
+        Optional.ofNullable(environment.get(ENV_BATCH_SIZE))
+                .ifPresent(batchSize -> configuration.batchSize = Integer.parseInt(batchSize));
+        Optional.ofNullable(environment.get(ENV_BATCH_TIME_MILLI))
+                .ifPresent(batchTimeMilli -> configuration.batchTimeMilli = Integer.parseInt(batchTimeMilli));
+        Optional.ofNullable(environment.get(ENV_RETRY_TIME_MILLI))
+                .ifPresent(retryTimeMilli -> configuration.retryTimeMilli = Integer.parseInt(retryTimeMilli));
     }
 }
