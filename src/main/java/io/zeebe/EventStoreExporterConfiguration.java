@@ -18,10 +18,4 @@ public class EventStoreExporterConfiguration {
      * <p>If the value is less then one, then no timer will be scheduled.
      */
     int batchTimeMilli = 300;
-
-
-    /**
-     * To configure the retry time in milliseconds, when a failed batch should be resent.
-     */
-    int retryTimeMilli = 300;
 }
