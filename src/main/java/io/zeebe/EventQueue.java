@@ -6,19 +6,8 @@ import org.json.JSONObject;
 import java.util.LinkedList;
 
 class EventQueue {
-    private final LinkedList<ImmutablePair<Long, JSONObject>> queue = new LinkedList<>();
+    final LinkedList<ImmutablePair<Long, JSONObject>> queue = new LinkedList<>();
 
-    EventQueue() {
-    }
-
-    LinkedList<ImmutablePair<Long, JSONObject>> getEvents() {
-        return queue;
-    }
-
-    /**
-     * At the moment all events are exported. To filter only certain event types, you could examine
-     * record.getMetadata().getValueType() and exit immediately for events that are not of interest.
-     */
     void addEvent(Record record) {
         final JSONObject json = new JSONObject();
         json.put("eventId", createIdempotentEventId(record));

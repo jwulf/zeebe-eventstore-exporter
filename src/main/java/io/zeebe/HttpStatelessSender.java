@@ -8,13 +8,11 @@ import org.json.JSONArray;
 
 import java.io.IOException;
 
-class HttpSender {
+class HttpStatelessSender {
     private static final String MIME_TYPE = "application/vnd.eventstore.events+json";
-    final private String url;
-    int backOffFactor = 1;
-    boolean failed = false;
+    private String url;
 
-    HttpSender(EventStoreExporterConfiguration configuration) {
+    HttpStatelessSender(EventStoreExporterConfiguration configuration) {
         url = configuration.url + "/streams/" + configuration.streamName;
     }
 
@@ -24,15 +22,8 @@ class HttpSender {
             final StringEntity json = new StringEntity(eventBatch.toString());
             httpPost.setEntity(json);
             httpPost.setHeader("Content-Type", MIME_TYPE);
-            backOffFactor ++;
-            failed = true;
             client.execute(httpPost);
-            failed = false;
-            backOffFactor = 1;
         }
     }
-
-
-
-
 }
+

@@ -23,6 +23,7 @@ public class EventStoreExporter implements Exporter
 
     private EventQueue eventQueue;
     private Batcher batcher;
+    private Sender sender;
     private Controller controller;
 
     public void configure(final Context context) {
@@ -32,14 +33,19 @@ public class EventStoreExporter implements Exporter
                 .instantiate(EventStoreExporterConfiguration.class);
         applyEnvironmentVariables(configuration);
 
-        log.debug("Exporter configured with {}", configuration);
+        RecordFilter filter = new RecordFilter();
+        context.setFilter(filter);
 
-        // Test the connection to Event Store, and halt the broker if unavailable
+        log.debug("Exporter configured with {}", configuration);
+        testConnectionToDatabase(configuration);
+    }
+
+    private void testConnectionToDatabase(EventStoreExporterConfiguration configuration) {
         try {
-            HttpSender sender = new HttpSender(configuration);
-            sender.send(new JSONArray());
+            HttpStatelessSender connectionTest = new HttpStatelessSender(configuration);
+            connectionTest.send(new JSONArray());
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException(e); // halt the broker if unavailable
         }
     }
 
@@ -47,9 +53,10 @@ public class EventStoreExporter implements Exporter
         EventStoreExporterContext context = new EventStoreExporterContext(controller, configuration, log);
         eventQueue = new EventQueue();
         batcher = new Batcher(context);
+        sender = new Sender(context);
         this.controller =  controller;
         controller.scheduleTask(Duration.ofMillis(batcher.batchPeriod), this::batchEvents);
-        controller.scheduleTask(Duration.ofMillis(batcher.sendPeriod), this::sendBatch);
+        controller.scheduleTask(Duration.ofMillis(sender.sendPeriod), this::sendBatch);
         log.debug("Event Store exporter started.");
     }
 
@@ -62,13 +69,13 @@ public class EventStoreExporter implements Exporter
     }
 
     private void batchEvents() {
-        batcher.batchFrom(eventQueue.getEvents());
+        batcher.batchFrom(eventQueue);
         controller.scheduleTask(Duration.ofMillis(batcher.batchPeriod), this::batchEvents);
     }
 
     private void sendBatch() {
-        batcher.sendBatch();
-        controller.scheduleTask(Duration.ofMillis(batcher.sendPeriod), this::sendBatch);
+        sender.sendFrom(batcher);
+        controller.scheduleTask(Duration.ofMillis(sender.sendPeriod), this::sendBatch);
     }
 
     private void applyEnvironmentVariables(final EventStoreExporterConfiguration configuration) {
