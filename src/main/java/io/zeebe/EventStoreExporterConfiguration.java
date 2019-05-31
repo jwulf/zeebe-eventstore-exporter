@@ -3,7 +3,6 @@ package io.zeebe;
 @SuppressWarnings("WeakerAccess")
 public class EventStoreExporterConfiguration {
     String url = "http://localhost:2113";
-
     String streamName = "zeebe";
 
     /**
