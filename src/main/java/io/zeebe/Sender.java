@@ -36,7 +36,8 @@ class Sender {
             http.send(eventBatch);
             batcher.queue.pollFirst();
             controller.updateLastExportedRecordPosition(positionOfLastEventInBatch);
-            succeed();
+            backOffFactor = 1;
+            sendPeriod = sendTimeMilli;
         } catch (IOException e) {
             backOff();
         }
@@ -44,17 +45,8 @@ class Sender {
 
     private void backOff() {
         backOffFactor ++;
-        setSendPeriod();
+        sendPeriod = FIBONACCI[Math.min(backOffFactor, FIBONACCI.length -  1)] * sendTimeMilli;
         log.debug("Post to Event Store failed.");
         log.debug("Retrying in " + sendPeriod + "ms...");
-    }
-
-    private void succeed() {
-        backOffFactor = 1;
-        setSendPeriod();
-    }
-
-    private void setSendPeriod() {
-        sendPeriod = FIBONACCI[Math.min(backOffFactor, FIBONACCI.length -  1)] * sendTimeMilli;
     }
 }
