@@ -6,10 +6,6 @@ import io.zeebe.protocol.clientapi.ValueType;
 
 public class RecordFilter implements Context.RecordFilter {
 
-    RecordFilter() {
-
-    }
-
     @Override
     public boolean acceptType(RecordType recordType) {
         return true;
