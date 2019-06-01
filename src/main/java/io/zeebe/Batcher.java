@@ -6,12 +6,11 @@ import org.json.JSONObject;
 import java.util.LinkedList;
 
 class Batcher {
-    private final int batchSize;
     final LinkedList<ImmutablePair<Long, JSONArray>> queue = new LinkedList<>();
-    int batchPeriod;
+    private final int batchSize;
+    final int batchPeriod;
 
-    Batcher(EventStoreExporterContext context) {
-        EventStoreExporterConfiguration configuration = context.configuration;
+    Batcher(EventStoreExporterConfiguration configuration) {
         batchSize = configuration.batchSize;
         batchPeriod = configuration.batchTimeMilli;
     }

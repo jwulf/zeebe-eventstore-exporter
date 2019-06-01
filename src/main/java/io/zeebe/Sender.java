@@ -17,11 +17,10 @@ class Sender {
     private int backOffFactor = 1;
     int sendPeriod;
 
-    Sender(EventStoreExporterContext context) {
-        EventStoreExporterConfiguration configuration = context.configuration;
+    Sender(Controller controller, Logger log, EventStoreExporterConfiguration configuration) {
         sendTimeMilli = configuration.batchTimeMilli;
-        controller = context.controller;
-        log = context.log;
+        this.controller = controller;
+        this.log = log;
         http = new HttpStatelessSender(configuration);
     }
 

@@ -33,11 +33,15 @@ public class EventStoreExporter implements Exporter
                 .instantiate(EventStoreExporterConfiguration.class);
         applyEnvironmentVariables(configuration);
 
-        RecordFilter filter = new RecordFilter();
-        context.setFilter(filter);
+        configureRecordFilter(context);
 
         log.debug("Exporter configured with {}", configuration);
         testConnectionToDatabase(configuration);
+    }
+
+    private void configureRecordFilter(Context context) {
+        RecordFilter filter = new RecordFilter();
+        context.setFilter(filter);
     }
 
     private void testConnectionToDatabase(EventStoreExporterConfiguration configuration) {
@@ -50,10 +54,9 @@ public class EventStoreExporter implements Exporter
     }
 
     public void open(final Controller controller) {
-        EventStoreExporterContext context = new EventStoreExporterContext(controller, configuration, log);
         eventQueue = new EventQueue();
-        batcher = new Batcher(context);
-        sender = new Sender(context);
+        batcher = new Batcher(configuration);
+        sender = new Sender(controller, log, configuration);
         this.controller =  controller;
         controller.scheduleTask(Duration.ofMillis(batcher.batchPeriod), this::batchEvents);
         controller.scheduleTask(Duration.ofMillis(sender.sendPeriod), this::sendBatch);
