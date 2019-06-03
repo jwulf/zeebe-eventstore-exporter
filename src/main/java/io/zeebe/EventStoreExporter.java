@@ -4,6 +4,8 @@ import io.zeebe.exporter.api.context.Context;
 import io.zeebe.exporter.api.context.Controller;
 import io.zeebe.exporter.api.record.Record;
 import io.zeebe.exporter.api.spi.Exporter;
+import io.zeebe.protocol.intent.Intent;
+import io.zeebe.protocol.intent.JobIntent;
 import org.json.JSONArray;
 import org.slf4j.Logger;
 
@@ -35,7 +37,7 @@ public class EventStoreExporter implements Exporter
 
         configureRecordFilter(context);
 
-        log.debug("Exporter configured with {}", configuration);
+        log.debug("Event Store Exporter configured with {}", configuration);
         testConnectionToDatabase(configuration);
     }
 
@@ -49,6 +51,7 @@ public class EventStoreExporter implements Exporter
             HttpStatelessSender connectionTest = new HttpStatelessSender(configuration);
             connectionTest.send(new JSONArray());
         } catch (Exception e) {
+            log.error("Could not connect to Event Store database on " + configuration.url);
             throw new RuntimeException(e); // halt the broker if unavailable
         }
     }
@@ -68,7 +71,10 @@ public class EventStoreExporter implements Exporter
     }
 
     public void export(Record record) {
-        eventQueue.addEvent(record);
+        Intent intent = record.getMetadata().getIntent();
+        if (intent == JobIntent.CREATED || intent == JobIntent.TIMED_OUT || intent == JobIntent.FAILED) {
+            eventQueue.addEvent(record);
+        }
     }
 
     private void batchEvents() {

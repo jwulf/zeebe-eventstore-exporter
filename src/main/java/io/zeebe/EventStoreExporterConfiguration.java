@@ -2,7 +2,15 @@ package io.zeebe;
 
 @SuppressWarnings("WeakerAccess")
 public class EventStoreExporterConfiguration {
+    /**
+     * The URL of the Event Store database REST endpoint
+     */
     String url = "http://localhost:2113";
+
+    /**
+     * The name of the stream in Event Store. This will automatically be created in Event Store when we
+     * first post data to it.
+     */
     String streamName = "zeebe";
 
     /**

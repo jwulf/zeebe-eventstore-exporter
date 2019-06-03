@@ -13,6 +13,7 @@ public class RecordFilter implements Context.RecordFilter {
 
     @Override
     public boolean acceptValue(ValueType valueType) {
-        return !valueType.equals(ValueType.JOB_BATCH);
+        return valueType.equals(ValueType.JOB);
+//        return !valueType.equals(ValueType.JOB_BATCH);
     }
 }
