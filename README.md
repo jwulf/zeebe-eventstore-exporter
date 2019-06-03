@@ -33,3 +33,6 @@ The exporter runs two loops using the scheduler. The first loop batches the even
 
 At the moment the two loops run at the same rate - apart from the scenario where the send loop is backing off. In an actual production scenario, you would code the loops depending on where the bottleneck in the system is. With the default settings (batch size: 100, batch time: 300ms), the exporter can export a maximum of 300 events / second.
 
+# Docker
+
+A `docker-compose` file to run the Zeebe broker with this exporter is available [here](https://github.com/zeebe-io/zeebe-docker-compose/tree/0.18).
