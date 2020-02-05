@@ -9,10 +9,11 @@ Configure the exporter via an `[[exporters]]]` entry in the `zeebe.cfg.toml` fil
 [[exporters]]
 id = "demo"
 className = "io.zeebe.EventStoreExporter"
-# batchTimeMilli = 300
-# batchSize = 100
-# streamName=zeebe
-# url=http://127.0.0.1:2113
+  [exporter.args]
+  # batchTimeMilli = 300
+  # batchSize = 100
+  # streamName=zeebe
+  # url=http://127.0.0.1:2113
 
 ```
 
